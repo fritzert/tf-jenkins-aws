@@ -1,0 +1,73 @@
+pipeline {
+    agent {
+        docker {
+            image 'hashicorp/terraform:0.14.5'
+        }
+    }
+
+    // AGREGANDO PARAMETROS
+    parameters {
+        choice(
+            // NOMBRE DEL PARAMETRO QUE SERVIRA COMO VARIABLE
+            name: 'ACTION',
+            choices: ['apply', 'destroy'],
+            description: 'Terraform action'
+        )
+    }
+
+    // AGREGAMOS LAS CREDENCIALES DE AWS EN JENKINS
+    // GLOBAL CREDENTILAS -> SECRET TEXT
+    // AGREGAMOS PARA aws-access_key y aws-secret_key
+
+    // VARIABLES DE ENTORNO QUE LEERA DE JENKINS
+    environment {
+        AWS_ACCESS_KEY_ID       = credentials('aws-access_key')
+        AWS_SECRET_ACCESS_KEY   = credentials('aws-secret_key')
+        AWS_DEFAULT_REGION      = 'us-west-2'
+    }
+
+    stages {        
+         // NOMBRE DEL STAGE
+        stage ('init') {
+            steps {
+                // INDICA LA VERSION DE TERRAFORM
+                sh 'terraform --version'
+
+                // EVITAR QUE EL CONTENEDOR SE QUEDE ESPERANDO ACCION
+                args '--entrypoint='''
+
+                // INICIA CREACION DE LOS RECURSOS POR TERRAFORM
+                sh 'terraform init'
+            }
+        }
+        
+        stage ('apply') {
+
+            when {
+                // SI EL PARAMETRO ES IGUA A 'apply' QUE EJECUTE EL SIGUIENTE BLOQUE
+                expression { params.ACTION == 'apply' }
+            }
+
+            steps {
+                // GUARDAR CON UN NOMBRE DE jenkins.plan PARA UNA POSTERIOR EJECUCION
+                sh 'terraform plan --out jenkins.plan'
+
+                // EJECUTAR PLAN jenkins.plan
+                sh 'terraform apply jenkins.plan'
+            }
+        }
+
+        stage ('destroy') {
+            
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            
+            steps {
+                // DESTRUIR LOS RECURSOS
+                sh 'terraform destroy -force'
+            }
+        }
+    }
+}
+
